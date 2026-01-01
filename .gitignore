@@ -3,6 +3,7 @@
 *.exp
 .vs
 .vscode
+Debug
 
 # Compiled Object files
 *.slo
@@ -23,6 +24,7 @@
 # Compiled Dynamic libraries
 *.so
 *.dylib
+*.dll
 *.exe
 
 # Fortran module files
