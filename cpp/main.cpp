@@ -307,6 +307,7 @@ int main(int argc, char **argv)
     }
 bailout:
     can_disconnect();
+    printf("ZLGCAN disconnect successfully\n");
     free(buffer);
 	return retCode;
 }
