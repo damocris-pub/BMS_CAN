@@ -72,6 +72,7 @@ int main(int argc, char **argv)
     uint16_t crc = 0;
     uint32_t fileCrc = 0;
     uint8_t resp[8];
+    char batterySN[33] = { '\0' };
     uint32_t newPacketLen;
     uint8_t status;
     int retCode = 0;
@@ -200,13 +201,13 @@ int main(int argc, char **argv)
     }
     printf("LV BMS's hardware build date is year:20%02d, month:%02d, day:%02d, batch no: %04d\n",
         resp[0], resp[1], resp[2], (resp[4] << 8) | resp[3]);
-#if 0
-    if (can_getBatterySN(addr, resp) < 0) {
+
+    if (can_getBatterySN(addr, (uint8_t *)batterySN) < 0) {
         printf("could not get battery sn\n");
         retCode = -1;
         goto bailout;
     }
-#endif 
+    printf("LV BMS's battery sn is %s\n", batterySN);
 
     if (can_setPacketLenCmd(addr, packetLen) < 0) {
         printf("try to set packet length %d failed\n", packetLen);
