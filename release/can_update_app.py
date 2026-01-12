@@ -140,11 +140,17 @@ var = (struct.unpack('B', resp[4])[0] << 8) | (struct.unpack('B', resp[3])[0])
 print(f"LV BMS's hardware build date is year:20{year:02}, month:{month:02}, day:{day:02}, batch no: {var}")
 
 batterySN = create_string_buffer(33)
-success = udll.can_getHardwareInfoCmd(c_ubyte(kBMSAddr), batterySN)
+success = udll.can_getBatterySN(c_ubyte(kBMSAddr), batterySN)
 if (success < 0):
     print("could not get battery sn")
     sys.exit(1)
 #print(f"LV BMS's battery sn is {batterySN.value.decode('utf-8')}")
+
+success = udll.can_prepareCmd(c_ubyte(kBMSAddr), resp)
+if (success < 0):
+    print("could not get hardware type")
+    sys.exit(1)
+print(f"LV BMS's cell num is {struct.unpack('B', resp[0])[0]}")
 
 success = udll.can_setPacketLenCmd(c_ubyte(kBMSAddr), c_ushort(kPacketLen))
 if (success < 0):

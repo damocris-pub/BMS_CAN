@@ -209,6 +209,13 @@ int main(int argc, char **argv)
     }
     printf("LV BMS's battery sn is %s\n", batterySN);
 
+    if (can_prepareCmd(addr, resp) < 0) {
+        printf("could not prepare dfu upgrade\n");
+        retCode = -1;
+        goto bailout;
+    }
+    printf("LV BMS' battery cell num is %d\n", resp[0]);
+
     if (can_setPacketLenCmd(addr, packetLen) < 0) {
         printf("try to set packet length %d failed\n", packetLen);
         retCode = -1;
