@@ -1,4 +1,4 @@
-#please use python3 x64 version, only Support ZLG USBCAN II
+#please use python3 x64 version, only Support ZLG & CX USBCAN
 #Author : richard xu (junzexu@outlook.com)
 #Date : Dec 02, 2026
 
@@ -8,7 +8,7 @@ import time
 import sys
 import struct 
 
-udll = cdll.LoadLibrary('./can_update.dll')
+udll = cdll.LoadLibrary('./cx_can_update.dll')
 
 #uint16_t crc16(uint8_t *buffer, uint32_t len, uint16_t start)
 udll.crc16.argtypes = [POINTER(c_ubyte), c_uint, c_ushort]
@@ -75,7 +75,7 @@ udll.can_updateCurrentStationCmd.restype = c_int
 udll.can_getUpdateStatusCmd.argtypes = [c_ubyte, c_char_p]
 udll.can_getUpdateStatusCmd.restype = c_int
 
-kZlgCanChn = 0          #0 - ZLG CAN Channel 0, 1 - ZLG CAN Channel 1
+kZlgCanChn = 0          #0 - USB CAN Channel 0, 1 - USB CAN Channel 1
 kCanSpeed = 500000      #bps
 kBMSAddr = 0            #bms slave address, start from 0
 kMode = 0               #0 - current station, 1 - all stations
@@ -98,15 +98,15 @@ base_ptr = cast((c_ubyte * fileLen).from_buffer_copy(content), POINTER(c_ubyte))
 print(f"target address is {kBMSAddr}, packet length is {kPacketLen}, mode is {kMode}, and crc type is {kCrcType}")
 success = udll.can_connect(c_int(kZlgCanChn), c_int(kCanSpeed))
 if (success != True):
-    print("cannot connect zlg USBCANII")
+    print("cannot connect USBCAN")
     sys.exit(1)
 
 sn = create_string_buffer(20)
 success = udll.can_getDeviceInfo(sn)
 if (success != True):
-    print("cannot connect ZLG USBCAN serial number")
+    print("cannot connect USBCAN serial number")
     sys.exit(1)
-print(f"connected ZLG USBCAN II's serial number is {sn.value.decode('utf-8')}")
+print(f"connected USBCAN's serial number is {sn.value.decode('utf-8')}")
 
 resp = create_string_buffer(8)
 success = udll.can_getBootloaderVerCmd(c_ubyte(kBMSAddr), resp)
@@ -236,7 +236,7 @@ while (True):
 
 success = udll.can_disconnect()
 if (success != True):
-    print("cannot disconnect ZLG USBCAN II")
+    print("cannot disconnect USBCAN")
     sys.exit(1)
-print("ZLG USBCAN II disconnected successfully")
+print("USBCAN disconnected successfully")
 sys.exit(0)

@@ -1,4 +1,4 @@
-//only Support ZLG USBCAN
+//only Support ZLG & CX USBCAN
 //Author : richard xu (junzexu@outlook.com)
 //Date : Dec 02, 2026
 
@@ -9,43 +9,59 @@
 #include <stdlib.h>
 #include <thread>
 #include <chrono>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-typedef void (*out_fct_type)(char character, void *buffer, size_t idx, size_t maxlen);
-
-__declspec(dllimport) void register_internal_putchar(out_fct_type custom_putchar);
-__declspec(dllimport) uint16_t crc16(uint8_t *buffer, uint32_t len, uint16_t start);
-__declspec(dllimport) uint32_t crc32(uint8_t *buffer, uint32_t len, uint32_t start);
-__declspec(dllimport) bool can_connect(int can_chan, int can_speed);
-__declspec(dllimport) bool can_disconnect(void);
-__declspec(dllimport) bool can_getDeviceInfo(char *sn);
-__declspec(dllimport) int can_prepareCmd(uint8_t addr, uint8_t *resp);
-__declspec(dllimport) int can_getBootloaderVerCmd(uint8_t addr, uint8_t *resp);
-__declspec(dllimport) int can_getBatterySN(uint8_t addr, uint8_t *resp);
-__declspec(dllimport) int can_getHardwareInfoCmd(uint8_t addr, uint8_t *resp);
-__declspec(dllimport) int can_getHardwareTypeCmd(uint8_t addr, uint8_t *resp);
-__declspec(dllimport) int can_getApplicationVerCmd(uint8_t addr, uint8_t *resp);
-__declspec(dllimport) int can_getPacketLenCmd(uint8_t addr, uint8_t *resp);
-__declspec(dllimport) int can_setPacketLenCmd(uint8_t addr, uint16_t packetLen);
-__declspec(dllimport) int can_setApplicationLenCmd(uint8_t addr, uint32_t applicationLen, uint8_t *resp);
-__declspec(dllimport) int can_setPacketSeqCmd(uint8_t addr, uint16_t packetSeq, uint8_t *resp);
-__declspec(dllimport) int can_setPacketAddrCmd(uint8_t addr, uint32_t packetAddr, uint8_t *resp);
-__declspec(dllimport) int can_sendPacketData(uint16_t packetLen, uint8_t *data);
-__declspec(dllimport) int can_verifyPacketDataCmd(uint8_t addr, uint16_t packetCrc);
-__declspec(dllimport) int can_verifyAllDataCmd(uint8_t addr, uint8_t crcType, uint32_t fileCrc);
-__declspec(dllimport) int can_updateAllStationCmd(void);
-__declspec(dllimport) int can_updateCurrentStationCmd(uint8_t addr);
-__declspec(dllimport) int can_getUpdateStatusCmd(uint8_t addr, uint8_t *resp);
-
-#ifdef __cplusplus
-}
-#endif
+#include <Windows.h>
 
 #define USED_CAN_CHN        0       //check which CAN channel is connected
 #define USED_CAN_SPEED      500000  //500kbps
+
+typedef void (*out_fct_type)(char character, void *buffer, size_t idx, size_t maxlen);
+typedef void (*RegisterInternalPutchar)(out_fct_type custom_putchar);
+typedef uint16_t (*Crc16)(uint8_t *buffer, uint32_t len, uint16_t start);
+typedef uint32_t (*Crc32)(uint8_t *buffer, uint32_t len, uint32_t start);
+typedef bool (*CanConnect)(int can_chan, int can_speed);
+typedef bool (*CanDisconnect)(void);
+typedef bool (*CanGetDeviceInfo)(char *sn);
+typedef int (*CanPrepareCmd)(uint8_t addr, uint8_t *resp);
+typedef int (*CanGetBootloaderVerCmd)(uint8_t addr, uint8_t *resp);
+typedef int (*CanGetBatterySN)(uint8_t addr, uint8_t *resp);
+typedef int (*CanGetHardwareInfoCmd)(uint8_t addr, uint8_t *resp);
+typedef int (*CanGetHardwareTypeCmd)(uint8_t addr, uint8_t *resp);
+typedef int (*CanGetApplicationVerCmd)(uint8_t addr, uint8_t *resp);
+typedef int (*CanGetPacketLenCmd)(uint8_t addr, uint8_t *resp);
+typedef int (*CanSetPacketLenCmd)(uint8_t addr, uint16_t packetLen);
+typedef int (*CanSetApplicationLenCmd)(uint8_t addr, uint32_t applicationLen, uint8_t *resp);
+typedef int (*CanSetPacketSeqCmd)(uint8_t addr, uint16_t packetSeq, uint8_t *resp);
+typedef int (*CanSetPacketAddrCmd)(uint8_t addr, uint32_t packetAddr, uint8_t *resp);
+typedef int (*CanSendPacketData)(uint16_t packetLen, uint8_t *data);
+typedef int (*CanVerifyPacketDataCmd)(uint8_t addr, uint16_t packetCrc);
+typedef int (*CanVerifyAllDataCmd)(uint8_t addr, uint8_t crcType, uint32_t fileCrc);
+typedef int (*CanUpdateAllStationCmd)(void);
+typedef int (*CanUpdateCurrentStationCmd)(uint8_t addr);
+typedef int (*CanGetUpdateStatusCmd)(uint8_t addr, uint8_t *resp);
+
+static RegisterInternalPutchar register_internal_putchar = NULL;
+static Crc16 crc16 = NULL;
+static Crc32 crc32 = NULL;
+static CanConnect can_connect = NULL;
+static CanDisconnect can_disconnect = NULL;
+static CanGetDeviceInfo can_getDeviceInfo = NULL;
+static CanPrepareCmd can_prepareCmd = NULL;
+static CanGetBootloaderVerCmd can_getBootloaderVerCmd = NULL;
+static CanGetBatterySN can_getBatterySN = NULL;
+static CanGetHardwareInfoCmd can_getHardwareInfoCmd = NULL;
+static CanGetHardwareTypeCmd can_getHardwareTypeCmd = NULL;
+static CanGetApplicationVerCmd can_getApplicationVerCmd = NULL;
+static CanGetPacketLenCmd can_getPacketLenCmd = NULL;
+static CanSetPacketLenCmd can_setPacketLenCmd = NULL;
+static CanSetApplicationLenCmd can_setApplicationLenCmd = NULL;
+static CanSetPacketSeqCmd can_setPacketSeqCmd = NULL;
+static CanSetPacketAddrCmd can_setPacketAddrCmd = NULL;
+static CanSendPacketData can_sendPacketData = NULL;
+static CanVerifyPacketDataCmd can_verifyPacketDataCmd = NULL;
+static CanVerifyAllDataCmd can_verifyAllDataCmd = NULL;
+static CanUpdateAllStationCmd can_updateAllStationCmd = NULL;
+static CanUpdateCurrentStationCmd can_updateCurrentStationCmd = NULL;
+static CanGetUpdateStatusCmd can_getUpdateStatusCmd = NULL;
 
 inline void putchar_(char character, void* buffer, size_t idx, size_t maxlen)
 {
@@ -76,6 +92,40 @@ int main(int argc, char **argv)
     uint32_t newPacketLen;
     uint8_t status;
     int retCode = 0;
+
+    //load library
+    HINSTANCE handle = LoadLibraryA("cx_can_update.dll");
+    if (handle == NULL) {
+        handle = LoadLibraryA("zlg_can_update.dll");
+        if (handle ==NULL) {
+            printf("could not load cx_can_update.dll or zlg_can_update.dll\n");
+            return false;
+        }
+    }
+    register_internal_putchar = (RegisterInternalPutchar)GetProcAddress(handle, "register_internal_putchar");
+    crc16 = (Crc16)GetProcAddress(handle, "crc16");
+    crc32 = (Crc32)GetProcAddress(handle, "crc32");
+    can_connect = (CanConnect)GetProcAddress(handle, "can_connect");
+    can_disconnect = (CanDisconnect)GetProcAddress(handle, "can_disconnect");
+    can_getDeviceInfo = (CanGetDeviceInfo)GetProcAddress(handle, "can_getDeviceInfo");
+    can_prepareCmd = (CanPrepareCmd)GetProcAddress(handle, "can_prepareCmd");
+    can_getBootloaderVerCmd = (CanGetBootloaderVerCmd)GetProcAddress(handle, "can_getBootloaderVerCmd");
+    can_getBatterySN = (CanGetBatterySN)GetProcAddress(handle, "can_getBatterySN");
+    can_getHardwareInfoCmd = (CanGetHardwareInfoCmd)GetProcAddress(handle, "can_getHardwareInfoCmd");
+    can_getHardwareTypeCmd = (CanGetHardwareTypeCmd)GetProcAddress(handle, "can_getHardwareTypeCmd");
+    can_getApplicationVerCmd = (CanGetApplicationVerCmd)GetProcAddress(handle, "can_getApplicationVerCmd");
+    can_getPacketLenCmd = (CanGetPacketLenCmd)GetProcAddress(handle, "can_getPacketLenCmd");
+    can_setPacketLenCmd = (CanSetPacketLenCmd)GetProcAddress(handle, "can_setPacketLenCmd");
+    can_setApplicationLenCmd = (CanSetApplicationLenCmd)GetProcAddress(handle, "can_setApplicationLenCmd");
+    can_setPacketSeqCmd = (CanSetPacketSeqCmd)GetProcAddress(handle, "can_setPacketSeqCmd");
+    can_setPacketAddrCmd = (CanSetPacketAddrCmd)GetProcAddress(handle, "can_setPacketAddrCmd");
+    can_sendPacketData = (CanSendPacketData)GetProcAddress(handle, "can_sendPacketData");
+    can_verifyPacketDataCmd = (CanVerifyPacketDataCmd)GetProcAddress(handle, "can_verifyPacketDataCmd");
+    can_verifyAllDataCmd = (CanVerifyAllDataCmd)GetProcAddress(handle, "can_verifyAllDataCmd");
+    can_updateAllStationCmd = (CanUpdateAllStationCmd)GetProcAddress(handle, "can_updateAllStationCmd");
+    can_updateCurrentStationCmd = (CanUpdateCurrentStationCmd)GetProcAddress(handle, "can_updateCurrentStationCmd");
+    can_getUpdateStatusCmd = (CanGetUpdateStatusCmd)GetProcAddress(handle, "can_getUpdateStatusCmd");
+
     fflush(stdout);
     if (argc != 3 && argc !=5 && argc != 7 && argc != 9 && argc != 11) {
         print_usage();
@@ -129,7 +179,7 @@ int main(int argc, char **argv)
         }
     }
     printf("target address is %d, packet length is %d, mode is %d, and crc type is %d\n", addr, packetLen, mode, crcType);
-    register_internal_putchar(putchar_);    //for dfu_can.dll's internal printf_
+    register_internal_putchar(putchar_);
 
     FILE* fd = fopen(argv[filePos], "rb");
     if (fd == nullptr) {
@@ -159,16 +209,16 @@ int main(int argc, char **argv)
     }
     fclose(fd);
     if (!can_connect(USED_CAN_CHN, USED_CAN_SPEED)) {
-        printf("ZLG USBCAN connection failed");
+        printf("USBCAN connection failed");
         free(buffer);
         return -1;
     }
     if (!can_getDeviceInfo(sn)) {
-        printf("could not fetch ZLG USBCAN serial number\n");
+        printf("could not fetch USBCAN serial number\n");
         retCode = -1;
         goto bailout;
     }
-    printf("connected ZLGCAN's serial number is %s\n", sn);
+    printf("connected USBCAN's serial number is %s\n", sn);
 
     if (can_getBootloaderVerCmd(addr, resp) < 0) {
         printf("could not fetch LV BMS bootloader's version\n");
@@ -313,7 +363,7 @@ int main(int argc, char **argv)
     }
 bailout:
     can_disconnect();
-    printf("ZLGCAN disconnect successfully\n");
+    printf("USBCAN disconnect successfully\n");
     free(buffer);
 	return retCode;
 }

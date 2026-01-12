@@ -21,21 +21,21 @@
     <ClInclude Include="..\..\cpp\dfu_common.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\cpp\printf.h">
-      <Filter>头文Header Files件</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\cpp\zlgcan.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\cpp\printf.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\cpp\dfu_can.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\cpp\dfu_common.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\cpp\printf.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\cpp\zlgcan.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

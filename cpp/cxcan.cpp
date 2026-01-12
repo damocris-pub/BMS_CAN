@@ -7,6 +7,7 @@
 #include <string.h>
 #include <thread>
 #include <chrono>
+#include <algorithm>
 #include <Windows.h>
 #include "cxcan.h"
 #include "dfu_common.h"
@@ -33,18 +34,18 @@ static VCI_CAN_OBJ can_constructFrame(uint8_t len, uint8_t *data)
 {
     VCI_CAN_OBJ can_data;
 	memset(&can_data, 0, sizeof(can_data));
+	can_data.ID = CAN_CMD_ID & 0x7FF;   //standard frame, data frame
+    can_data.TimeFlag = 0;  //1 - enable timestamp, 0 - disable timestamp
+    can_data.TimeStamp = 0;
     can_data.ExternFlag = 0;
     can_data.RemoteFlag = 0;
+    can_data.SendType = TRANSMIT_NORMAL;
     can_data.DataLen = 8;   //always 8 bytes
-    can_data.SendType = 1;  //normal
-    can_data.TimeFlag = 0;
-    can_data.TimeStamp = 0;
-	can_data.ID = CAN_CMD_ID & 0x7FF;   //standard frame, data frame
 	for (int i=0; i<len; ++i) {
-        can_data.Data[i] = data[i];
+        can_data.data[i] = data[i];
 	}
     for (int i=len; i<8; ++i) {
-        can_data.Data[i] = 0x00;    //padding with 0x00
+        can_data.data[i] = 0x00;    //padding with 0x00
     }
     return can_data;
 }
@@ -68,12 +69,29 @@ static bool can_waitResponse(int second)
     return true;
 }
 
+static int speed_option[] = {
+    20000, 33333, 40000, 50000, 66666, 80000, 83333, 100000, 
+    125000, 200000, 250000, 400000, 500000, 666666, 800000, 1000000, 
+};
+
+static uint16_t timing_code[] = {
+    0x1C18, 0x6F09, 0xFF87, 0x1C09, 0x6F04, 0xFF83, 0x6F03, 0x1C04, 
+    0x1C03, 0xFA81, 0x1C01, 0xFA80, 0x1C00, 0xB680, 0x1600, 0x1400, 
+};
+
 bool can_connect(int can_chan, int can_speed)
 {
-    char path[16];
-    char speed[16];
+    if (can_chan != 0 && can_chan != 1) {
+        printf_("CX USBCAN channel should be 0 or 1\n");
+        return false;
+    }
+    int idx = std::lower_bound(speed_option, speed_option + sizeof(speed_option)/sizeof(int), can_speed) - speed_option;
+    if (speed_option[idx] != can_speed) {
+        printf_("CX USBCAN speed doesn't support %d\n", can_speed);
+        return false;
+    }
 
-    //load library 
+    //load library
     HINSTANCE handle = LoadLibraryA("cxcan.dll");
     if (handle == NULL) {
         printf_("could not load cxcan.dll\n");
@@ -99,11 +117,11 @@ bool can_connect(int can_chan, int can_speed)
 	}
     VCI_INIT_CONFIG config;
 	memset(&config, 0, sizeof(config));
-    config.timing0 = 0;
-    config.timing1 = 0x14;
-    config.acc_code = 0x80000008;
+    config.timing0 = timing_code[idx] & 0xFF;
+    config.timing1 = (timing_code[idx] >> 8) & 0xFF; 
+    config.acc_code = 0;
     config.acc_mask = 0xffffffff;
-    config.mode = 2;
+    config.mode = 0; //0 - normal mode, 1 - listen only mode, 2 - loopback mode
 	if (VCI_InitCAN(VCI_USBCAN2, 0, can_chan, &config) != STATUS_OK) {
         printf_("could not init CAN channel %d\n", can_chan);
 		return false;
@@ -132,8 +150,8 @@ bool can_disconnect(void)
 
 bool can_getDeviceInfo(char *sn)
 {
-    ZCAN_DEVICE_INFO info;
-    if (ZCAN_GetDeviceInf(dev, &info) != STATUS_OK) {
+    VCI_BOARD_INFO info;
+    if (VCI_ReadBoardInfo(gDevice, 0, &info) != STATUS_OK) {
         return false;
     }
     printf_("USBCAN HW version is %04X, FW version is %04X, Driver Version is %04X, API version is %04X\n", 
@@ -145,8 +163,8 @@ bool can_getDeviceInfo(char *sn)
 int can_prepareCmd(uint8_t addr, uint8_t *resp)
 {
     prepareCmd[CMD_ADR_OFFSET] = addr;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(4 + 1, prepareCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(4 + 1, prepareCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send prepare command failed\n");
 		return -1;
     }
@@ -154,27 +172,27 @@ int can_prepareCmd(uint8_t addr, uint8_t *resp)
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+    VCI_CAN_OBJ response_data;
+    if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
         printf_("CAN : receive packet timeout\n");
         return -1;
     }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+    if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+        printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
         return -1;
     }
-    if (!verifyPrepare(response_data.frame.data, false)) {
+    if (!verifyPrepare(response_data.data, false)) {
         return -1;
     }
-    resp[0] = response_data.frame.data[5];    //get the cell num
+    resp[0] = response_data.data[5];    //get the cell num
     return 1;
 }
 
 int can_getBootloaderVerCmd(uint8_t addr, uint8_t *resp)
 {
     getBootloaderVerCmd[CMD_ADR_OFFSET] = addr;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(4 + 1, getBootloaderVerCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(4 + 1, getBootloaderVerCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send getBootloaderVer command failed\n");
 		return -1;
     }
@@ -182,19 +200,19 @@ int can_getBootloaderVerCmd(uint8_t addr, uint8_t *resp)
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+    VCI_CAN_OBJ response_data;
+    if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
         printf_("CAN : receive packet timeout\n");
         return -1;
     }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+    if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+        printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
         return -1;
     }
-    if (!verifyGetBootloaderVer(response_data.frame.data, false)) {
+    if (!verifyGetBootloaderVer(response_data.data, false)) {
         return -1;
     }
-    uint8_t *p = response_data.frame.data;
+    uint8_t *p = response_data.data;
     memcpy(resp, &p[RSP_DAT_OFFSET - 1], 5);
     return 5;
 }
@@ -202,8 +220,8 @@ int can_getBootloaderVerCmd(uint8_t addr, uint8_t *resp)
 int can_getBatterySN(uint8_t addr, uint8_t *resp)
 {
     getBatterySNCmd[CMD_ADR_OFFSET] = addr;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(4 + 1, getBatterySNCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(4 + 1, getBatterySNCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send getBatterySN command failed\n");
 		return -1;
     }
@@ -211,19 +229,19 @@ int can_getBatterySN(uint8_t addr, uint8_t *resp)
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
+    VCI_CAN_OBJ response_data;
     int seq = 1;
     int idx = 0;
     while(true) {
-        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+        if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
             printf_("CAN : receive packet timeout\n");
             return -1;
         }
-        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-            printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+        if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+            printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
             return -1;
         }
-        uint8_t *p = response_data.frame.data;
+        uint8_t *p = response_data.data;
         if (p[RSP_STA_OFFSET - 1] != DFU_GET_HWINFO + 0x40) {
             printf_("getBatterySN response error: command received %d, expected 0x61", p[RSP_STA_OFFSET - 1]);
             return -1;
@@ -246,8 +264,8 @@ int can_getBatterySN(uint8_t addr, uint8_t *resp)
 int can_getHardwareInfoCmd(uint8_t addr, uint8_t *resp)
 {
     getHardwareInfoCmd[CMD_ADR_OFFSET] = addr;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(4 + 1, getHardwareInfoCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(4 + 1, getHardwareInfoCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send getHardwareInfo command failed\n");
 		return -1;
     }
@@ -255,19 +273,19 @@ int can_getHardwareInfoCmd(uint8_t addr, uint8_t *resp)
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+    VCI_CAN_OBJ response_data;
+    if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
         printf_("CAN : receive packet timeout\n");
         return -1;
     }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+    if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+        printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
         return -1;
     }
-    if (!verifyGetHardwareInfo(response_data.frame.data, false)) {
+    if (!verifyGetHardwareInfo(response_data.data, false)) {
         return -1;
     }
-    uint8_t *p = response_data.frame.data;
+    uint8_t *p = response_data.data;
     memcpy(resp, &p[RSP_DAT_OFFSET-1], 5);
     return 5;
 }
@@ -275,8 +293,8 @@ int can_getHardwareInfoCmd(uint8_t addr, uint8_t *resp)
 int can_getHardwareTypeCmd(uint8_t addr, uint8_t *resp)
 {
     getHardwareTypeCmd[CMD_ADR_OFFSET] = addr;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(4 + 1, getHardwareTypeCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(4 + 1, getHardwareTypeCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send getHardwareType command failed\n");
 		return -1;
     }
@@ -284,19 +302,19 @@ int can_getHardwareTypeCmd(uint8_t addr, uint8_t *resp)
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+    VCI_CAN_OBJ response_data;
+    if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
         printf_("CAN : receive packet timeout\n");
         return -1;
     }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+    if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+        printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
         return -1;
     }
-    if (!verifyGetHardwareType(response_data.frame.data, false)) {
+    if (!verifyGetHardwareType(response_data.data, false)) {
         return -1;
     }
-    uint8_t *p = response_data.frame.data;
+    uint8_t *p = response_data.data;
     memcpy(resp, &p[RSP_DAT_OFFSET-1], 5);
     return 5;
 }
@@ -304,8 +322,8 @@ int can_getHardwareTypeCmd(uint8_t addr, uint8_t *resp)
 int can_getApplicationVerCmd(uint8_t addr, uint8_t *resp)
 {
     getApplicationVerCmd[CMD_ADR_OFFSET] = addr;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(4 + 1, getApplicationVerCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(4 + 1, getApplicationVerCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send getApplicationVer command failed\n");
 		return -1;
     }
@@ -313,19 +331,19 @@ int can_getApplicationVerCmd(uint8_t addr, uint8_t *resp)
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+    VCI_CAN_OBJ response_data;
+    if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
         printf_("CAN : receive packet timeout\n");
         return -1;
     }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+    if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+        printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
         return -1;
     }
-    if (!verifyGetApplicationVer(response_data.frame.data, false)) {
+    if (!verifyGetApplicationVer(response_data.data, false)) {
         return -1;
     }
-    uint8_t *p = response_data.frame.data;
+    uint8_t *p = response_data.data;
     memcpy(resp, &p[RSP_DAT_OFFSET-1], 5);
     return 5;
 }
@@ -333,8 +351,8 @@ int can_getApplicationVerCmd(uint8_t addr, uint8_t *resp)
 int can_getPacketLenCmd(uint8_t addr, uint8_t *resp)
 {
     getPacketLenCmd[CMD_ADR_OFFSET] = addr;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(4 + 1, getPacketLenCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(4 + 1, getPacketLenCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send getPacketLen command failed\n");
 		return -1;
     }
@@ -342,19 +360,19 @@ int can_getPacketLenCmd(uint8_t addr, uint8_t *resp)
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+    VCI_CAN_OBJ response_data;
+    if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
         printf_("CAN : receive packet timeout\n");
         return -1;
     }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+    if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+        printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
         return -1;
     }
-    if (!verifyGetPacketLen(response_data.frame.data, false)) {
+    if (!verifyGetPacketLen(response_data.data, false)) {
         return -1;
     }
-    uint8_t *p = response_data.frame.data;
+    uint8_t *p = response_data.data;
     memcpy(resp, &p[RSP_DAT_OFFSET-1], 4);
     return 4;
 }
@@ -371,8 +389,8 @@ int can_setPacketLenCmd(uint8_t addr, uint16_t packetLen)
     setPacketLenCmd[CMD_DAT_OFFSET + 1] = (packetLen >> 8) & 0xFF;
     setPacketLenCmd[CMD_DAT_OFFSET + 2] = 0x00;
     setPacketLenCmd[CMD_DAT_OFFSET + 3] = 0x00;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(6 + 1, setPacketLenCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(6 + 1, setPacketLenCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send setPacketLen command failed\n");
 		return -1;
     }
@@ -380,16 +398,16 @@ int can_setPacketLenCmd(uint8_t addr, uint16_t packetLen)
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+    VCI_CAN_OBJ response_data;
+    if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
         printf_("CAN : receive packet timeout\n");
         return -1;
     }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+    if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+        printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
         return -1;
     }
-    if (!verifySetPacketLen(response_data.frame.data, false)) {
+    if (!verifySetPacketLen(response_data.data, false)) {
         return -1;
     }
     return 0;
@@ -402,8 +420,8 @@ int can_setApplicationLenCmd(uint8_t addr, uint32_t applicationLen, uint8_t *res
     setApplicationLenCmd[CMD_DAT_OFFSET + 1] = (applicationLen >> 8) & 0xFF;
     setApplicationLenCmd[CMD_DAT_OFFSET + 2] = (applicationLen >> 16) & 0xFF;
     setApplicationLenCmd[CMD_DAT_OFFSET + 3] = (applicationLen >> 24) & 0xFF;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(6 + 1, setApplicationLenCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(6 + 1, setApplicationLenCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send getApplicationLen command failed\n");
 		return -1;
     }
@@ -411,19 +429,19 @@ int can_setApplicationLenCmd(uint8_t addr, uint32_t applicationLen, uint8_t *res
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+    VCI_CAN_OBJ response_data;
+    if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
         printf_("CAN : receive packet timeout\n");
         return -1;
     }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+    if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+        printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
         return -1;
     }
-    if (!verifySetApplicationLen(response_data.frame.data, false)) {
+    if (!verifySetApplicationLen(response_data.data, false)) {
         return -1;
     }
-    uint8_t *p = response_data.frame.data;
+    uint8_t *p = response_data.data;
     memcpy(resp, &p[RSP_DAT_OFFSET], 4);
     return 4;
 }
@@ -433,8 +451,8 @@ int can_setPacketSeqCmd(uint8_t addr, uint16_t packetSeq, uint8_t *resp)
     setPacketSeqCmd[CMD_ADR_OFFSET] = addr;
     setPacketSeqCmd[CMD_DAT_OFFSET] = packetSeq & 0xFF;
     setPacketSeqCmd[CMD_DAT_OFFSET + 1] = (packetSeq >> 8) & 0xFF;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(4 + 1, setPacketSeqCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(4 + 1, setPacketSeqCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send setPacketSeq command failed\n");
 		return -1;
     }
@@ -442,19 +460,19 @@ int can_setPacketSeqCmd(uint8_t addr, uint16_t packetSeq, uint8_t *resp)
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+    VCI_CAN_OBJ response_data;
+    if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
         printf_("CAN : receive packet timeout\n");
         return -1;
     }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+    if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+        printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
         return -1;
     }
-    if (!verifySetPacketSeq(response_data.frame.data, false)) {
+    if (!verifySetPacketSeq(response_data.data, false)) {
         return -1;
     }
-    uint8_t *p = response_data.frame.data;
+    uint8_t *p = response_data.data;
     memcpy(resp, &p[RSP_DAT_OFFSET], 2);
     return 2;
 }
@@ -466,8 +484,8 @@ int can_setPacketAddrCmd(uint8_t addr, uint32_t packetAddr, uint8_t *resp)
     setPacketAddrCmd[CMD_DAT_OFFSET + 1] = (packetAddr >> 8) & 0xFF;
     setPacketAddrCmd[CMD_DAT_OFFSET + 2] = (packetAddr >> 16) & 0xFF;
     setPacketAddrCmd[CMD_DAT_OFFSET + 3] = (packetAddr >> 24) & 0xFF;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(6 + 1, setPacketAddrCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(6 + 1, setPacketAddrCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send setPacketAddr command failed\n");
 		return -1;
     }
@@ -475,19 +493,19 @@ int can_setPacketAddrCmd(uint8_t addr, uint32_t packetAddr, uint8_t *resp)
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+    VCI_CAN_OBJ response_data;
+    if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
         printf_("CAN : receive packet timeout\n");
         return -1;
     }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+    if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+        printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
         return -1;
     }
-    if (!verifySetPacketAddr(response_data.frame.data, false)) {
+    if (!verifySetPacketAddr(response_data.data, false)) {
         return -1;
     }
-    uint8_t *p = response_data.frame.data;
+    uint8_t *p = response_data.data;
     memcpy(resp, &p[RSP_DAT_OFFSET], 4);
     return 4;
 }
@@ -500,15 +518,20 @@ int can_sendPacketData(uint16_t packetLen, uint8_t *data)
 		return -1;
     }
     int offset = 0;
-    ZCAN_Transmit_Data can_data;
-	can_data.frame.can_id = MAKE_CAN_ID(CAN_DAT_ID, 0, 0, 0);   //standard frame, data frame
-	can_data.frame.can_dlc = 8; //always 8 bytes
-	can_data.transmit_type = ZCAN_TRANSMIT_NORMAL;
+    VCI_CAN_OBJ can_data;
+	memset(&can_data, 0, sizeof(can_data));
+	can_data.ID = CAN_DAT_ID & 0x7FF;   //standard frame, data frame
+    can_data.TimeFlag = 0;  //1 - enable timestamp, 0 - disable timestamp
+    can_data.TimeStamp = 0;
+    can_data.ExternFlag = 0;
+    can_data.RemoteFlag = 0;
+    can_data.SendType = TRANSMIT_NORMAL;
+    can_data.DataLen = 8;   //always 8 bytes
     while (offset < packetLen) {
         for (int i = 0; i < 8; ++i) {
-            can_data.frame.data[i] = data[i + offset];
+            can_data.data[i] = data[i + offset];
         }
-        if (ZCAN_Transmit(chn, &can_data, 1) != 1) {
+        if (VCI_Transmit(gDevice, 0, gChannel, &can_data, 1) != 1) {
             printf_("send packet data command failed\n");
             return -1;
         }
@@ -520,13 +543,13 @@ int can_sendPacketData(uint16_t packetLen, uint8_t *data)
             printf_("wait CAN response timeout\n");
             return -1;
         }
-        ZCAN_Receive_Data response_data;
-        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+        VCI_CAN_OBJ response_data;
+        if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
             printf_("CAN : receive packet timeout\n");
             return -1;
         }
-        if (GET_ID(response_data.frame.can_id) != CAN_DAT_ID) {
-            printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+        if (GET_ID(response_data.ID) != CAN_DAT_ID) {
+            printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
             return -1;
         }
         if (!verifySendPacketData(response_data.frame.data, false)) {
@@ -542,8 +565,8 @@ int can_verifyPacketDataCmd(uint8_t addr, uint16_t packetCrc)
     verifyPacketDataCmd[CMD_ADR_OFFSET] = addr;
     verifyPacketDataCmd[CMD_DAT_OFFSET] = packetCrc & 0xFF;
     verifyPacketDataCmd[CMD_DAT_OFFSET + 1] = (packetCrc >> 8) & 0xFF;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(4 + 1, verifyPacketDataCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(4 + 1, verifyPacketDataCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send verifyPacketData command failed\n");
 		return -1;
     }
@@ -551,16 +574,16 @@ int can_verifyPacketDataCmd(uint8_t addr, uint16_t packetCrc)
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+    VCI_CAN_OBJ response_data;
+    if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
         printf_("CAN : receive packet timeout\n");
         return -1;
     }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+    if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+        printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
         return -1;
     }
-    if (!verifyPacketData(response_data.frame.data, false)) {
+    if (!verifyPacketData(response_data.data, false)) {
         return -1;
     }
     return 0;
@@ -572,7 +595,7 @@ int can_verifyAllDataCmd(uint8_t addr, uint8_t crcType, uint32_t fileCrc)
         printf_("crc type should be 0 - crc16 or 1 - crc32\n");
 		return -1;
     }
-    ZCAN_Transmit_Data can_cmd;
+    VCI_CAN_OBJ can_cmd;
     if (crcType == 0) {
         verifyAllDataCrc16Cmd[CMD_ADR_OFFSET] = addr;
         verifyAllDataCrc16Cmd[CMD_DAT_OFFSET + 1] = fileCrc & 0xFF;
@@ -586,7 +609,7 @@ int can_verifyAllDataCmd(uint8_t addr, uint8_t crcType, uint32_t fileCrc)
         verifyAllDataCrc32Cmd[CMD_DAT_OFFSET + 4] = (fileCrc >> 24) & 0xFF;
         can_cmd = can_constructFrame(7 + 1, verifyAllDataCrc32Cmd + CMD_LEN_OFFSET);
     }
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send verifyAllData command failed\n");
 		return -1;
     }
@@ -594,16 +617,16 @@ int can_verifyAllDataCmd(uint8_t addr, uint8_t crcType, uint32_t fileCrc)
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+    VCI_CAN_OBJ response_data;
+    if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
         printf_("CAN : receive packet timeout\n");
         return -1;
     }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+    if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+        printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
         return -1;
     }
-    if (!verifyAllData(response_data.frame.data, false)) {
+    if (!verifyAllData(response_data.data, false)) {
         return -1;
     }
     return 0;
@@ -613,8 +636,8 @@ int can_updateAllStationCmd(void)
 {
     updateStationCmd[CMD_ADR_OFFSET] = 0x00;
     updateStationCmd[CMD_DAT_OFFSET] = 0x52;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(4 + 1, updateStationCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(4 + 1, updateStationCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send verifyAllData command failed\n");
 		return -1;
     }
@@ -625,8 +648,8 @@ int can_updateCurrentStationCmd(uint8_t addr)
 {
     updateStationCmd[CMD_ADR_OFFSET] = addr;
     updateStationCmd[CMD_DAT_OFFSET] = 0x51;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(4 + 1, updateStationCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(4 + 1, updateStationCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send verifyAllData command failed\n");
 		return -1;
     }
@@ -636,8 +659,8 @@ int can_updateCurrentStationCmd(uint8_t addr)
 int can_getUpdateStatusCmd(uint8_t addr, uint8_t *resp)
 {
     getUpdateStatusCmd[CMD_ADR_OFFSET] = addr;
-    ZCAN_Transmit_Data can_cmd = can_constructFrame(2 + 1, getUpdateStatusCmd + CMD_LEN_OFFSET);
-    if (ZCAN_Transmit(chn, &can_cmd, 1) != 1) {
+    VCI_CAN_OBJ can_cmd = can_constructFrame(2 + 1, getUpdateStatusCmd + CMD_LEN_OFFSET);
+    if (VCI_Transmit(gDevice, 0, gChannel, &can_cmd, 1) != 1) {
         printf_("send getUpdateStatus command failed\n");
 		return -1;
     }
@@ -645,19 +668,19 @@ int can_getUpdateStatusCmd(uint8_t addr, uint8_t *resp)
         printf_("wait CAN response timeout\n");
 		return -1;
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+    VCI_CAN_OBJ response_data;
+    if (VCI_Receive(gDevice, 0, gChannel, &response_data, 1, 0) != 1) {
         printf_("CAN : receive packet timeout\n");
         return -1;
     }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
+    if (GET_ID(response_data.ID) != CAN_RSP_ID) {
+        printf_("CAN : wrong CAN ID %d received\n", response_data.ID);
         return -1;
     }
-    if (!verifyGetUpdateStatus(response_data.frame.data, false)) {
+    if (!verifyGetUpdateStatus(response_data.data, false)) {
         return -1;
     }
-    uint8_t *p = response_data.frame.data;
+    uint8_t *p = response_data.data;
     memcpy(resp, &p[RSP_DAT_OFFSET], 3);
     return 3;
 }

@@ -7,6 +7,7 @@
 #include <string.h>
 #include <thread>
 #include <chrono>
+#include <algorithm>
 #include <Windows.h>
 #include "zlgcan.h"
 #include "dfu_common.h"
@@ -24,7 +25,6 @@ static can_initCAN ZCAN_InitCAN = NULL;
 static can_startCAN ZCAN_StartCAN = NULL;
 static can_resetCAN ZCAN_ResetCAN = NULL;
 static can_clearBuffer ZCAN_ClearBuffer = NULL;
-static can_readChannelErrInfo ZCAN_ReadChannelErrInfo = NULL;
 static can_getReceiveNum ZCAN_GetReceiveNum = NULL;
 static can_transmit ZCAN_Transmit = NULL;
 static can_receive ZCAN_Receive = NULL;
@@ -39,7 +39,7 @@ static ZCAN_Transmit_Data can_constructFrame(uint8_t len, uint8_t *data)
 	memset(&can_data, 0, sizeof(can_data));
 	can_data.frame.can_id = MAKE_CAN_ID(CAN_CMD_ID, 0, 0, 0);   //standard frame, data frame
 	can_data.frame.can_dlc = 8; //always 8 bytes
-	can_data.transmit_type = ZCAN_TRANSMIT_NORMAL;
+	can_data.transmit_type = TRANSMIT_NORMAL;
 	for (int i=0; i<len; ++i) {
 		can_data.frame.data[i] = data[i];
 	}
@@ -68,11 +68,22 @@ static bool can_waitResponse(int second)
     return true;
 }
 
+static int speed_option[] = {
+    10000, 20000, 50000, 100000, 125000, 250000, 500000, 800000, 1000000,  
+};
+
 bool can_connect(int can_chan, int can_speed)
 {
     char path[16];
     char speed[16];
 
+    if (can_chan != 0 && can_chan != 1) {
+        printf_("ZLG USBCAN channel should be 0 or 1\n");
+        return false;
+    }
+    if (!std::binary_search(speed_option, speed_option + sizeof(speed_option)/sizeof(int), can_speed)) {
+        printf_("ZLG USBCAN speed doesn't support %d\n", can_speed);
+    }
     //load library 
     HINSTANCE handle = LoadLibraryA("zlgcan.dll");
     if (handle == NULL) {
@@ -87,7 +98,6 @@ bool can_connect(int can_chan, int can_speed)
     ZCAN_StartCAN = (can_startCAN)GetProcAddress(handle, "ZCAN_StartCAN");
     ZCAN_ResetCAN = (can_resetCAN)GetProcAddress(handle, "ZCAN_ResetCAN");
     ZCAN_ClearBuffer = (can_clearBuffer)GetProcAddress(handle, "ZCAN_ClearBuffer");
-    ZCAN_ReadChannelErrInfo = (can_readChannelErrInfo)GetProcAddress(handle, "ZCAN_ReadChannelErrInfo");
     ZCAN_GetReceiveNum = (can_getReceiveNum)GetProcAddress(handle, "ZCAN_GetReceiveNum");
     ZCAN_Transmit = (can_transmit)GetProcAddress(handle, "ZCAN_Transmit");
     ZCAN_Receive = (can_receive)GetProcAddress(handle, "ZCAN_Receive");
@@ -508,7 +518,7 @@ int can_sendPacketData(uint16_t packetLen, uint8_t *data)
     ZCAN_Transmit_Data can_data;
 	can_data.frame.can_id = MAKE_CAN_ID(CAN_DAT_ID, 0, 0, 0);   //standard frame, data frame
 	can_data.frame.can_dlc = 8; //always 8 bytes
-	can_data.transmit_type = ZCAN_TRANSMIT_NORMAL;
+	can_data.transmit_type = TRANSMIT_NORMAL;
     while (offset < packetLen) {
         for (int i = 0; i < 8; ++i) {
             can_data.frame.data[i] = data[i + offset];

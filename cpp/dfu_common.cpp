@@ -225,7 +225,7 @@ uint16_t crc16(uint8_t *buffer, uint32_t len, uint16_t start)
 uint32_t crc32(uint8_t *buffer, uint32_t len, uint32_t start)
 {
     uint32_t crc = ~start;
-    for (int i=0; i<len; i++) {
+    for (uint32_t i=0; i<len; i++) {
         crc = crc ^ buffer[i];
         for (uint32_t j = 8; j > 0; j--) {
             crc = (crc >> 1) ^ (0xEDB88320U & ((crc & 1) ? 0xFFFFFFFF : 0));
