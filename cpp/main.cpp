@@ -19,7 +19,7 @@ typedef void (*out_fct_type)(char character, void *buffer, size_t idx, size_t ma
 __declspec(dllimport) void register_internal_putchar(out_fct_type custom_putchar);
 __declspec(dllimport) uint16_t crc16(uint8_t *buffer, uint32_t len, uint16_t start);
 __declspec(dllimport) uint32_t crc32(uint8_t *buffer, uint32_t len, uint32_t start);
-__declspec(dllimport) bool can_connect(int zlg_chan, int can_speed);
+__declspec(dllimport) bool can_connect(int can_chan, int can_speed);
 __declspec(dllimport) bool can_disconnect(void);
 __declspec(dllimport) bool can_getDeviceInfo(char *sn);
 __declspec(dllimport) int can_prepareCmd(uint8_t addr, uint8_t *resp);
@@ -76,7 +76,7 @@ int main(int argc, char **argv)
     uint32_t newPacketLen;
     uint8_t status;
     int retCode = 0;
-
+    fflush(stdout);
     if (argc != 3 && argc !=5 && argc != 7 && argc != 9 && argc != 11) {
         print_usage();
         return -1;
@@ -129,7 +129,6 @@ int main(int argc, char **argv)
         }
     }
     printf("target address is %d, packet length is %d, mode is %d, and crc type is %d\n", addr, packetLen, mode, crcType);
-
     register_internal_putchar(putchar_);    //for dfu_can.dll's internal printf_
 
     FILE* fd = fopen(argv[filePos], "rb");

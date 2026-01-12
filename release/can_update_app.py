@@ -16,7 +16,7 @@ udll.crc16.restype = c_ushort
 #uint32_t crc32(uint8_t *buffer, uint32_t len, uint32_t start)
 udll.crc32.argtypes = [POINTER(c_ubyte), c_uint, c_uint]
 udll.crc32.restype = c_uint
-#bool can_connect(int zlg_chan, int can_speed)
+#bool can_connect(int can_chan, int can_speed)
 udll.can_connect.argtypes = [c_int, c_int]
 udll.can_connect.restype = c_bool
 #bool can_disconnect(void)

@@ -8,43 +8,43 @@
 #include <thread>
 #include <chrono>
 #include <Windows.h>
-#include "zlgcan.h"
+#include "cxcan.h"
 #include "dfu_common.h"
 #include "dfu_can.h"
 #include "printf.h"
 
 //global variable
-static DEVICE_HANDLE dev = NULL;
-static CHANNEL_HANDLE chn = NULL;
-static can_openDevice ZCAN_OpenDevice = NULL;
-static can_closeDevice ZCAN_CloseDevice = NULL;
-static can_getDeviceInf ZCAN_GetDeviceInf = NULL;
-static can_isDeviceOnLine ZCAN_IsDeviceOnLine = NULL;
-static can_initCAN ZCAN_InitCAN = NULL;
-static can_startCAN ZCAN_StartCAN = NULL;
-static can_resetCAN ZCAN_ResetCAN = NULL;
-static can_clearBuffer ZCAN_ClearBuffer = NULL;
-static can_readChannelErrInfo ZCAN_ReadChannelErrInfo = NULL;
-static can_getReceiveNum ZCAN_GetReceiveNum = NULL;
-static can_transmit ZCAN_Transmit = NULL;
-static can_receive ZCAN_Receive = NULL;
-static can_setValue ZCAN_SetValue = NULL;
-static can_getValue ZCAN_GetValue = NULL;
-static can_getIProperty GetIProperty = NULL;
-static can_geleaseIProperty ReleaseIProperty = NULL;
+static uint32_t gDevice = 0;
+static uint32_t gChannel = 0;
+static can_openDevice VCI_OpenDevice = NULL;
+static can_closeDevice VCI_CloseDevice = NULL;
+static can_initCAN VCI_InitCAN = NULL;
+static can_readBoardInfo VCI_ReadBoardInfo = NULL;
+static can_startCAN VCI_StartCAN = NULL;
+static can_resetCAN VCI_ResetCAN = NULL;
+static can_clearBuffer VCI_ClearBuffer = NULL;
+static can_getReceiveNum VCI_GetReceiveNum = NULL;
+static can_transmit VCI_Transmit = NULL;
+static can_receive VCI_Receive = NULL;
+static can_setReference VCI_SetReference = NULL;
+static can_usbDeviceReset VCI_UsbDeviceReset = NULL;
 
-static ZCAN_Transmit_Data can_constructFrame(uint8_t len, uint8_t *data)
+static VCI_CAN_OBJ can_constructFrame(uint8_t len, uint8_t *data)
 {
-    ZCAN_Transmit_Data can_data;
+    VCI_CAN_OBJ can_data;
 	memset(&can_data, 0, sizeof(can_data));
-	can_data.frame.can_id = MAKE_CAN_ID(CAN_CMD_ID, 0, 0, 0);   //standard frame, data frame
-	can_data.frame.can_dlc = 8; //always 8 bytes
-	can_data.transmit_type = ZCAN_TRANSMIT_NORMAL;
+    can_data.ExternFlag = 0;
+    can_data.RemoteFlag = 0;
+    can_data.DataLen = 8;   //always 8 bytes
+    can_data.SendType = 1;  //normal
+    can_data.TimeFlag = 0;
+    can_data.TimeStamp = 0;
+	can_data.ID = CAN_CMD_ID & 0x7FF;   //standard frame, data frame
 	for (int i=0; i<len; ++i) {
-		can_data.frame.data[i] = data[i];
+        can_data.Data[i] = data[i];
 	}
     for (int i=len; i<8; ++i) {
-        can_data.frame.data[i] = 0x00;  //padding with 0x00
+        can_data.Data[i] = 0x00;    //padding with 0x00
     }
     return can_data;
 }
@@ -53,7 +53,7 @@ static bool can_waitResponse(int second)
 {
     auto start = std::chrono::high_resolution_clock::now();
     while (true) {
-        int num = ZCAN_GetReceiveNum(chn, 0);   //0 - CAN, 1 - CANFD
+        int num = VCI_GetReceiveNum(gDevice, 0, gChannel);
         if (num != 0) {
             break;
         } else {
@@ -68,67 +68,62 @@ static bool can_waitResponse(int second)
     return true;
 }
 
-bool can_connect(int zlg_chan, int can_speed)
+bool can_connect(int can_chan, int can_speed)
 {
     char path[16];
     char speed[16];
 
     //load library 
-    HINSTANCE handle = LoadLibraryA("zlgcan.dll");
+    HINSTANCE handle = LoadLibraryA("cxcan.dll");
     if (handle == NULL) {
-        printf_("could not load zlgcan.dll\n");
+        printf_("could not load cxcan.dll\n");
         return false;
     }
-    ZCAN_OpenDevice = (can_openDevice)GetProcAddress(handle, "ZCAN_OpenDevice");
-    ZCAN_CloseDevice = (can_closeDevice)GetProcAddress(handle, "ZCAN_CloseDevice");
-    ZCAN_GetDeviceInf = (can_getDeviceInf)GetProcAddress(handle, "ZCAN_GetDeviceInf");
-    ZCAN_IsDeviceOnLine = (can_isDeviceOnLine)GetProcAddress(handle, "ZCAN_IsDeviceOnLine");
-    ZCAN_InitCAN = (can_initCAN)GetProcAddress(handle, "ZCAN_InitCAN");
-    ZCAN_StartCAN = (can_startCAN)GetProcAddress(handle, "ZCAN_StartCAN");
-    ZCAN_ResetCAN = (can_resetCAN)GetProcAddress(handle, "ZCAN_ResetCAN");
-    ZCAN_ClearBuffer = (can_clearBuffer)GetProcAddress(handle, "ZCAN_ClearBuffer");
-    ZCAN_ReadChannelErrInfo = (can_readChannelErrInfo)GetProcAddress(handle, "ZCAN_ReadChannelErrInfo");
-    ZCAN_GetReceiveNum = (can_getReceiveNum)GetProcAddress(handle, "ZCAN_GetReceiveNum");
-    ZCAN_Transmit = (can_transmit)GetProcAddress(handle, "ZCAN_Transmit");
-    ZCAN_Receive = (can_receive)GetProcAddress(handle, "ZCAN_Receive");
-    ZCAN_SetValue = (can_setValue)GetProcAddress(handle, "ZCAN_SetValue");
-    ZCAN_GetValue = (can_getValue)GetProcAddress(handle, "ZCAN_GetValue");
-    GetIProperty = (can_getIProperty)GetProcAddress(handle, "GetIProperty");
-    ReleaseIProperty = (can_geleaseIProperty)GetProcAddress(handle, "ReleaseIProperty");
 
-	ZCAN_CHANNEL_INIT_CONFIG config;
-	dev = ZCAN_OpenDevice(ZCAN_USBCAN2, 0, 0);
-	if (dev == INVALID_DEVICE_HANDLE) {
-		printf_("could not open ZLG USBCAN\n");
+    VCI_OpenDevice = (can_openDevice)GetProcAddress(handle, "VCI_OpenDevice");
+    VCI_CloseDevice = (can_closeDevice)GetProcAddress(handle, "VCI_CloseDevice");
+    VCI_ReadBoardInfo = (can_readBoardInfo)GetProcAddress(handle, "VCI_ReadBoardInfo");
+    VCI_InitCAN = (can_initCAN)GetProcAddress(handle, "VCI_InitCAN");
+    VCI_StartCAN = (can_startCAN)GetProcAddress(handle, "VCI_StartCAN");
+    VCI_ResetCAN = (can_resetCAN)GetProcAddress(handle, "VCI_ResetCAN");
+    VCI_ClearBuffer = (can_clearBuffer)GetProcAddress(handle, "VCI_ClearBuffer");
+    VCI_GetReceiveNum = (can_getReceiveNum)GetProcAddress(handle, "VCI_GetReceiveNum");
+    VCI_Transmit = (can_transmit)GetProcAddress(handle, "VCI_Transmit");
+    VCI_Receive = (can_receive)GetProcAddress(handle, "VCI_Receive");
+    VCI_SetReference = (can_setReference)GetProcAddress(handle, "VCI_SetReference");
+    VCI_UsbDeviceReset = (can_usbDeviceReset)GetProcAddress(handle, "VCI_UsbDeviceReset");
+
+	if (VCI_OpenDevice(VCI_USBCAN2, 0, 0) != STATUS_OK) {
+		printf_("could not open CX USBCAN\n");
 		return false;
 	}
-	sprintf_(path, "%d/baud_rate", zlg_chan);
-    sprintf_(speed, "%d", can_speed);
-	ZCAN_SetValue(dev, path, speed);
+    VCI_INIT_CONFIG config;
 	memset(&config, 0, sizeof(config));
-	config.can_type = 0;
-	config.can.mode = 0;    //0 : normal mode, 1 : listen mode
-	config.can.acc_code = 0;
-	config.can.acc_mask = 0xFFFFFFFF;
-	chn = ZCAN_InitCAN(dev, zlg_chan, &config);
-	if (chn == INVALID_CHANNEL_HANDLE) {
-        printf_("could not init CAN channel %d\n", zlg_chan);
+    config.timing0 = 0;
+    config.timing1 = 0x14;
+    config.acc_code = 0x80000008;
+    config.acc_mask = 0xffffffff;
+    config.mode = 2;
+	if (VCI_InitCAN(VCI_USBCAN2, 0, can_chan, &config) != STATUS_OK) {
+        printf_("could not init CAN channel %d\n", can_chan);
 		return false;
 	}
-	if (ZCAN_StartCAN(chn) != STATUS_OK) {
-        printf_("could not start CAN channel %d\n", zlg_chan);
+	if (VCI_StartCAN(VCI_USBCAN2, 0, can_chan) != STATUS_OK) {
+        printf_("could not start CAN channel %d\n", can_chan);
 		return false;
 	}
+    gDevice = VCI_USBCAN2;
+    gChannel = can_chan;
     return true;
 }
 
 bool can_disconnect(void)
 {
-	if (ZCAN_ResetCAN(chn) != STATUS_OK) {
+	if (VCI_ResetCAN(gDevice, 0, gChannel) != STATUS_OK) {
         printf_("could not reset CAN channel\n");
 		return false;
     }
-	if (ZCAN_CloseDevice(dev) != STATUS_OK) {
+	if (VCI_CloseDevice(gDevice, 0) != STATUS_OK) {
         printf_("could not close CAN device\n");
 		return false;
     }

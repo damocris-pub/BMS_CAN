@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-__declspec(dllexport) bool can_connect(int zlg_chan, int can_speed);
+__declspec(dllexport) bool can_connect(int can_chan, int can_speed);
 __declspec(dllexport) bool can_disconnect(void);
 __declspec(dllexport) bool can_getDeviceInfo(char *sn);
 __declspec(dllexport) int can_prepareCmd(uint8_t addr, uint8_t *resp);
