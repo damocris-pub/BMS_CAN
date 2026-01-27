@@ -70,7 +70,7 @@ inline void putchar_(char character, void* buffer, size_t idx, size_t maxlen)
 
 inline void print_usage(void)
 {
-    printf("Usage: can_update_app.exe -d <addr> -p <packetLen> -m <updateMode> -c <crcType> -f <dfuFile>\n");
+    printf("Usage: can_update_app.exe -a <addr> -p <packetLen> -m <updateMode> -c <crcType> -f <dfuFile>\n");
     printf("addr : battery addresss start from 0\n");
     printf("packetLen : packet length, should be 8, 16, 32, 64, 128, 256 or 512\n");
     printf("updateMode : 0 - only update current station, 1 - update all stations\n");
@@ -242,6 +242,7 @@ int main(int argc, char **argv)
         retCode = -1;
         goto bailout;
     }
+#if 0
     printf("LV BMS's hardware type is %s\n", resp);
     if (can_getHardwareInfoCmd(addr, resp) < 0) {
         printf("could not get hardware info\n");
@@ -257,31 +258,33 @@ int main(int argc, char **argv)
         goto bailout;
     }
     printf("LV BMS's battery sn is %s\n", batterySN);
-
+#endif 
     if (can_prepareCmd(addr, resp) < 0) {
         printf("could not prepare dfu upgrade\n");
         retCode = -1;
         goto bailout;
     }
     printf("LV BMS' battery cell num is %d\n", resp[0]);
-
-    if (can_setPacketLenCmd(addr, packetLen) < 0) {
-        printf("try to set packet length %d failed\n", packetLen);
-        retCode = -1;
-        goto bailout;
-    }
-    if (can_getPacketLenCmd(addr, resp) < 0) {
-        printf("try to get packet length failed\n");
-        retCode = -1;
-        goto bailout;
-    } else {
-        newPacketLen = *(uint32_t*)resp;
-        printf("new packet length %u\n", newPacketLen);
-    }
-    if (newPacketLen != packetLen) {
-        printf("packetLen are not equal\n");
-        retCode = -2;
-        goto bailout;
+    if (packetLen != 0x80) {
+        if (can_setPacketLenCmd(addr, packetLen) < 0) {
+            printf("try to set packet length %d failed\n", packetLen);
+            retCode = -1;
+            goto bailout;
+        }
+        if (can_getPacketLenCmd(addr, resp) < 0) {
+            printf("try to get packet length failed\n");
+            retCode = -1;
+            goto bailout;
+        }
+        else {
+            newPacketLen = *(uint32_t*)resp;
+            printf("new packet length %u\n", newPacketLen);
+        }
+        if (newPacketLen != packetLen) {
+            printf("packetLen are not equal\n");
+            retCode = -2;
+            goto bailout;
+        }
     }
     if (can_setApplicationLenCmd(addr, fileLen, resp) < 0 || *(uint32_t *)resp != fileLen) {
         printf("try to set application length %u failed\n", fileLen);
@@ -302,7 +305,7 @@ int main(int argc, char **argv)
         }
         crc = crc16(buffer + (seq-1) * packetLen, packetLen, 0xFFFF);
         printf("packet seq %d 's crc is 0x%04x\n", seq, crc);
-        if (can_verifyPacketDataCmd(packetLen, crc) < 0) {
+        if (can_verifyPacketDataCmd(addr, crc) < 0) {
             printf("try to verify packet crc for seq %d failed\n", seq);
             retCode = -1;
             goto bailout;

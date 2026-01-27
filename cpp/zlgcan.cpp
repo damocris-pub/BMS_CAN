@@ -165,24 +165,34 @@ int can_prepareCmd(uint8_t addr, uint8_t *resp)
         printf_("send prepare command failed\n");
 		return -1;
     }
-    if (!can_waitResponse(1)) {
-        printf_("wait CAN response timeout\n");
-		return -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        if (!can_waitResponse(1)) {
+            printf_("wait CAN response timeout\n");
+            return -1;
+        }
+        ZCAN_Receive_Data response_data;
+        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+            printf_("CAN : receive packet timeout\n");
+            return -1;
+        }
+        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 3)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            if (!verifyPrepare(response_data.frame.data, false)) {
+                return -1;
+            }
+            resp[0] = response_data.frame.data[5];    //get the cell num
+            return 1;
+        }
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-        printf_("CAN : receive packet timeout\n");
-        return -1;
-    }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-        return -1;
-    }
-    if (!verifyPrepare(response_data.frame.data, false)) {
-        return -1;
-    }
-    resp[0] = response_data.frame.data[5];    //get the cell num
-    return 1;
+    return -1;
 }
 
 int can_getBootloaderVerCmd(uint8_t addr, uint8_t *resp)
@@ -193,25 +203,35 @@ int can_getBootloaderVerCmd(uint8_t addr, uint8_t *resp)
         printf_("send getBootloaderVer command failed\n");
 		return -1;
     }
-    if (!can_waitResponse(1)) {
-        printf_("wait CAN response timeout\n");
-		return -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        if (!can_waitResponse(1)) {
+            printf_("wait CAN response timeout\n");
+	    	return -1;
+        }
+        ZCAN_Receive_Data response_data;
+        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+            printf_("CAN : receive packet timeout\n");
+            return -1;
+        }
+        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 3)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            if (!verifyGetBootloaderVer(response_data.frame.data, false)) {
+                return -1;
+            }
+            uint8_t *p = response_data.frame.data;
+            memcpy(resp, &p[RSP_DAT_OFFSET - 1], 5);
+            return 5;
+        }
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-        printf_("CAN : receive packet timeout\n");
-        return -1;
-    }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-        return -1;
-    }
-    if (!verifyGetBootloaderVer(response_data.frame.data, false)) {
-        return -1;
-    }
-    uint8_t *p = response_data.frame.data;
-    memcpy(resp, &p[RSP_DAT_OFFSET - 1], 5);
-    return 5;
+    return -1;
 }
 
 int can_getBatterySN(uint8_t addr, uint8_t *resp)
@@ -222,6 +242,7 @@ int can_getBatterySN(uint8_t addr, uint8_t *resp)
         printf_("send getBatterySN command failed\n");
 		return -1;
     }
+    auto start = std::chrono::high_resolution_clock::now();
     if (!can_waitResponse(1)) {
         printf_("wait CAN response timeout\n");
 		return -1;
@@ -235,22 +256,28 @@ int can_getBatterySN(uint8_t addr, uint8_t *resp)
             return -1;
         }
         if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-            printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-            return -1;
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 3)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            uint8_t *p = response_data.frame.data;
+            if (p[RSP_STA_OFFSET - 1] != DFU_GET_HWINFO + 0x40) {
+                printf_("getBatterySN response error: command received %d, expected 0x61\n", p[RSP_STA_OFFSET - 1]);
+                return -1;
+            }
+            if (p[RSP_DAT_OFFSET - 1] != seq) {
+                printf_("getBatterySN response error: seq received %d, expected %d\n", p[RSP_DAT_OFFSET - 1], seq);
+                return -1;
+            }
+            int len = p[RSP_LEN_OFFSET - 1] - 3;
+            memcpy(resp + idx, &p[RSP_DAT_OFFSET], len);
+            idx += len;
+            ++seq;
         }
-        uint8_t *p = response_data.frame.data;
-        if (p[RSP_STA_OFFSET - 1] != DFU_GET_HWINFO + 0x40) {
-            printf_("getBatterySN response error: command received %d, expected 0x61", p[RSP_STA_OFFSET - 1]);
-            return -1;
-        }
-        if (p[RSP_DAT_OFFSET - 1] != seq) {
-            printf_("getBatterySN response error: seq received %d, expected %d", p[RSP_DAT_OFFSET - 1], seq);
-            return -1;
-        }
-        int len = p[RSP_LEN_OFFSET - 1] - 3;
-        memcpy(resp + idx, &p[RSP_DAT_OFFSET], len);
-        idx += len;
-        ++seq;
         if (!can_waitResponse(1)) {  //wait until timeout, then stop receiving
             break;
         }
@@ -266,25 +293,35 @@ int can_getHardwareInfoCmd(uint8_t addr, uint8_t *resp)
         printf_("send getHardwareInfo command failed\n");
 		return -1;
     }
-    if (!can_waitResponse(1)) {
-        printf_("wait CAN response timeout\n");
-		return -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        if (!can_waitResponse(1)) {
+            printf_("wait CAN response timeout\n");
+	    	return -1;
+        }
+        ZCAN_Receive_Data response_data;
+        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+            printf_("CAN : receive packet timeout\n");
+            return -1;
+        }
+        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 3)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            if (!verifyGetHardwareInfo(response_data.frame.data, false)) {
+                return -1;
+            }
+            uint8_t *p = response_data.frame.data;
+            memcpy(resp, &p[RSP_DAT_OFFSET-1], 5);
+            return 5;
+        }
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-        printf_("CAN : receive packet timeout\n");
-        return -1;
-    }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-        return -1;
-    }
-    if (!verifyGetHardwareInfo(response_data.frame.data, false)) {
-        return -1;
-    }
-    uint8_t *p = response_data.frame.data;
-    memcpy(resp, &p[RSP_DAT_OFFSET-1], 5);
-    return 5;
+    return -1;
 }
 
 int can_getHardwareTypeCmd(uint8_t addr, uint8_t *resp)
@@ -295,25 +332,35 @@ int can_getHardwareTypeCmd(uint8_t addr, uint8_t *resp)
         printf_("send getHardwareType command failed\n");
 		return -1;
     }
-    if (!can_waitResponse(1)) {
-        printf_("wait CAN response timeout\n");
-		return -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        if (!can_waitResponse(1)) {
+            printf_("wait CAN response timeout\n");
+	    	return -1;
+        }
+        ZCAN_Receive_Data response_data;
+        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+            printf_("CAN : receive packet timeout\n");
+            return -1;
+        }
+        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 3)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            if (!verifyGetHardwareType(response_data.frame.data, false)) {
+                return -1;
+            }
+            uint8_t *p = response_data.frame.data;
+            memcpy(resp, &p[RSP_DAT_OFFSET-1], 5);
+            return 5;
+        }
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-        printf_("CAN : receive packet timeout\n");
-        return -1;
-    }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-        return -1;
-    }
-    if (!verifyGetHardwareType(response_data.frame.data, false)) {
-        return -1;
-    }
-    uint8_t *p = response_data.frame.data;
-    memcpy(resp, &p[RSP_DAT_OFFSET-1], 5);
-    return 5;
+    return -1;
 }
 
 int can_getApplicationVerCmd(uint8_t addr, uint8_t *resp)
@@ -324,25 +371,35 @@ int can_getApplicationVerCmd(uint8_t addr, uint8_t *resp)
         printf_("send getApplicationVer command failed\n");
 		return -1;
     }
-    if (!can_waitResponse(1)) {
-        printf_("wait CAN response timeout\n");
-		return -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        if (!can_waitResponse(1)) {
+            printf_("wait CAN response timeout\n");
+	    	return -1;
+        }
+        ZCAN_Receive_Data response_data;
+        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+            printf_("CAN : receive packet timeout\n");
+            return -1;
+        }
+        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 3)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            if (!verifyGetApplicationVer(response_data.frame.data, false)) {
+                return -1;
+            }
+            uint8_t *p = response_data.frame.data;
+            memcpy(resp, &p[RSP_DAT_OFFSET-1], 5);
+            return 5;
+        }
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-        printf_("CAN : receive packet timeout\n");
-        return -1;
-    }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-        return -1;
-    }
-    if (!verifyGetApplicationVer(response_data.frame.data, false)) {
-        return -1;
-    }
-    uint8_t *p = response_data.frame.data;
-    memcpy(resp, &p[RSP_DAT_OFFSET-1], 5);
-    return 5;
+    return -1;
 }
 
 int can_getPacketLenCmd(uint8_t addr, uint8_t *resp)
@@ -353,25 +410,35 @@ int can_getPacketLenCmd(uint8_t addr, uint8_t *resp)
         printf_("send getPacketLen command failed\n");
 		return -1;
     }
-    if (!can_waitResponse(1)) {
-        printf_("wait CAN response timeout\n");
-		return -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        if (!can_waitResponse(1)) {
+            printf_("wait CAN response timeout\n");
+	    	return -1;
+        }
+        ZCAN_Receive_Data response_data;
+        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+            printf_("CAN : receive packet timeout\n");
+            return -1;
+        }
+        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 3)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            if (!verifyGetPacketLen(response_data.frame.data, false)) {
+                return -1;
+            }
+            uint8_t *p = response_data.frame.data;
+            memcpy(resp, &p[RSP_DAT_OFFSET-1], 4);
+            return 4;
+        }
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-        printf_("CAN : receive packet timeout\n");
-        return -1;
-    }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-        return -1;
-    }
-    if (!verifyGetPacketLen(response_data.frame.data, false)) {
-        return -1;
-    }
-    uint8_t *p = response_data.frame.data;
-    memcpy(resp, &p[RSP_DAT_OFFSET-1], 4);
-    return 4;
+    return -1;
 }
 
 int can_setPacketLenCmd(uint8_t addr, uint16_t packetLen)
@@ -391,23 +458,33 @@ int can_setPacketLenCmd(uint8_t addr, uint16_t packetLen)
         printf_("send setPacketLen command failed\n");
 		return -1;
     }
-    if (!can_waitResponse(1)) {
-        printf_("wait CAN response timeout\n");
-		return -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        if (!can_waitResponse(1)) {
+            printf_("wait CAN response timeout\n");
+	    	return -1;
+        }
+        ZCAN_Receive_Data response_data;
+        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+            printf_("CAN : receive packet timeout\n");
+            return -1;
+        }
+        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 3)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            if (!verifySetPacketLen(response_data.frame.data, false)) {
+                return -1;
+            }
+            return 0;
+        }
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-        printf_("CAN : receive packet timeout\n");
-        return -1;
-    }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-        return -1;
-    }
-    if (!verifySetPacketLen(response_data.frame.data, false)) {
-        return -1;
-    }
-    return 0;
+    return -1;
 }
 
 int can_setApplicationLenCmd(uint8_t addr, uint32_t applicationLen, uint8_t *resp)
@@ -422,25 +499,35 @@ int can_setApplicationLenCmd(uint8_t addr, uint32_t applicationLen, uint8_t *res
         printf_("send getApplicationLen command failed\n");
 		return -1;
     }
-    if (!can_waitResponse(1)) {
-        printf_("wait CAN response timeout\n");
-		return -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        if (!can_waitResponse(1)) {
+            printf_("wait CAN response timeout\n");
+	    	return -1;
+        }
+        ZCAN_Receive_Data response_data;
+        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+            printf_("CAN : receive packet timeout\n");
+            return -1;
+        }
+        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 3)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            if (!verifySetApplicationLen(response_data.frame.data, false)) {
+                return -1;
+            }
+            uint8_t *p = response_data.frame.data;
+            memcpy(resp, &p[RSP_DAT_OFFSET], 4);
+            return 4;
+        }
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-        printf_("CAN : receive packet timeout\n");
-        return -1;
-    }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-        return -1;
-    }
-    if (!verifySetApplicationLen(response_data.frame.data, false)) {
-        return -1;
-    }
-    uint8_t *p = response_data.frame.data;
-    memcpy(resp, &p[RSP_DAT_OFFSET], 4);
-    return 4;
+    return -1;
 }
 
 int can_setPacketSeqCmd(uint8_t addr, uint16_t packetSeq, uint8_t *resp)
@@ -453,25 +540,35 @@ int can_setPacketSeqCmd(uint8_t addr, uint16_t packetSeq, uint8_t *resp)
         printf_("send setPacketSeq command failed\n");
 		return -1;
     }
-    if (!can_waitResponse(1)) {
-        printf_("wait CAN response timeout\n");
-		return -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        if (!can_waitResponse(1)) {
+            printf_("wait CAN response timeout\n");
+	    	return -1;
+        }
+        ZCAN_Receive_Data response_data;
+        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+            printf_("CAN : receive packet timeout\n");
+            return -1;
+        }
+        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 3)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            if (!verifySetPacketSeq(response_data.frame.data, false)) {
+                return -1;
+            }
+            uint8_t *p = response_data.frame.data;
+            memcpy(resp, &p[RSP_DAT_OFFSET], 2);
+            return 2;
+        }
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-        printf_("CAN : receive packet timeout\n");
-        return -1;
-    }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-        return -1;
-    }
-    if (!verifySetPacketSeq(response_data.frame.data, false)) {
-        return -1;
-    }
-    uint8_t *p = response_data.frame.data;
-    memcpy(resp, &p[RSP_DAT_OFFSET], 2);
-    return 2;
+    return -1;
 }
 
 int can_setPacketAddrCmd(uint8_t addr, uint32_t packetAddr, uint8_t *resp)
@@ -486,25 +583,35 @@ int can_setPacketAddrCmd(uint8_t addr, uint32_t packetAddr, uint8_t *resp)
         printf_("send setPacketAddr command failed\n");
 		return -1;
     }
-    if (!can_waitResponse(1)) {
-        printf_("wait CAN response timeout\n");
-		return -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        if (!can_waitResponse(1)) {
+            printf_("wait CAN response timeout\n");
+	    	return -1;
+        }
+        ZCAN_Receive_Data response_data;
+        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+            printf_("CAN : receive packet timeout\n");
+            return -1;
+        }
+        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 3)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            if (!verifySetPacketAddr(response_data.frame.data, false)) {
+                return -1;
+            }
+            uint8_t *p = response_data.frame.data;
+            memcpy(resp, &p[RSP_DAT_OFFSET], 4);
+            return 4;
+        }
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-        printf_("CAN : receive packet timeout\n");
-        return -1;
-    }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-        return -1;
-    }
-    if (!verifySetPacketAddr(response_data.frame.data, false)) {
-        return -1;
-    }
-    uint8_t *p = response_data.frame.data;
-    memcpy(resp, &p[RSP_DAT_OFFSET], 4);
-    return 4;
+    return -1;
 }
 
 int can_sendPacketData(uint16_t packetLen, uint8_t *data)
@@ -531,21 +638,30 @@ int can_sendPacketData(uint16_t packetLen, uint8_t *data)
 #if 1
         std::this_thread::sleep_for(std::chrono::microseconds(5000));   //5 ms for FW to process the data
 #else
-        if (!can_waitResponse(1)) {
-            printf_("wait CAN response timeout\n");
-            return -1;
-        }
-        ZCAN_Receive_Data response_data;
-        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-            printf_("CAN : receive packet timeout\n");
-            return -1;
-        }
-        if (GET_ID(response_data.frame.can_id) != CAN_DAT_ID) {
-            printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-            return -1;
-        }
-        if (!verifySendPacketData(response_data.frame.data, false)) {
-            return -1;
+        auto start = std::chrono::high_resolution_clock::now();
+        while (true) {
+            if (!can_waitResponse(1)) {
+                printf_("wait CAN response timeout\n");
+                return -1;
+            }
+            ZCAN_Receive_Data response_data;
+            if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+                printf_("CAN : receive packet timeout\n");
+                return -1;
+            }
+            if (GET_ID(response_data.frame.can_id) != CAN_DAT_ID) {
+                std::this_thread::sleep_for(std::chrono::microseconds(1000));
+                auto end = std::chrono::high_resolution_clock::now();
+                auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+                if (dur > std::chrono::microseconds(1000000 * 3)) {
+                    printf_("CAN : wait for correct CAN ID timeout\n");
+                    return -1;
+                }
+            } else {
+                if (!verifySendPacketData(response_data.frame.data, false)) {
+                    return -1;
+                }
+            }
         }
 #endif 
     }
@@ -562,23 +678,33 @@ int can_verifyPacketDataCmd(uint8_t addr, uint16_t packetCrc)
         printf_("send verifyPacketData command failed\n");
 		return -1;
     }
-    if (!can_waitResponse(1)) {
-        printf_("wait CAN response timeout\n");
-		return -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        if (!can_waitResponse(1)) {
+            printf_("wait CAN response timeout\n");
+	    	return -1;
+        }
+        ZCAN_Receive_Data response_data;
+        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+            printf_("CAN : receive packet timeout\n");
+            return -1;
+        }
+        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
+            std::this_thread::sleep_for(std::chrono::microseconds(100000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 10)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            if (!verifyPacketData(response_data.frame.data, false)) {
+                return -1;
+            }
+            return 0;
+        }
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-        printf_("CAN : receive packet timeout\n");
-        return -1;
-    }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-        return -1;
-    }
-    if (!verifyPacketData(response_data.frame.data, false)) {
-        return -1;
-    }
-    return 0;
+    return -1;
 }
 
 int can_verifyAllDataCmd(uint8_t addr, uint8_t crcType, uint32_t fileCrc)
@@ -605,23 +731,33 @@ int can_verifyAllDataCmd(uint8_t addr, uint8_t crcType, uint32_t fileCrc)
         printf_("send verifyAllData command failed\n");
 		return -1;
     }
-    if (!can_waitResponse(1)) {
-        printf_("wait CAN response timeout\n");
-		return -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        if (!can_waitResponse(1)) {
+            printf_("wait CAN response timeout\n");
+	    	return -1;
+        }
+        ZCAN_Receive_Data response_data;
+        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+            printf_("CAN : receive packet timeout\n");
+            return -1;
+        }
+        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 3)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            if (!verifyAllData(response_data.frame.data, false)) {
+                return -1;
+            }
+            return 0;
+        }
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-        printf_("CAN : receive packet timeout\n");
-        return -1;
-    }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-        return -1;
-    }
-    if (!verifyAllData(response_data.frame.data, false)) {
-        return -1;
-    }
-    return 0;
+    return -1;
 }
 
 int can_updateAllStationCmd(void)
@@ -656,23 +792,33 @@ int can_getUpdateStatusCmd(uint8_t addr, uint8_t *resp)
         printf_("send getUpdateStatus command failed\n");
 		return -1;
     }
-    if (!can_waitResponse(5)) {
-        printf_("wait CAN response timeout\n");
-		return -1;
+    auto start = std::chrono::high_resolution_clock::now();
+    while (true) {
+        if (!can_waitResponse(5)) {
+            printf_("wait CAN response timeout\n");
+	    	return -1;
+        }
+        ZCAN_Receive_Data response_data;
+        if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
+            printf_("CAN : receive packet timeout\n");
+            return -1;
+        }
+        if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
+            auto end = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+            if (dur > std::chrono::microseconds(1000000 * 3)) {
+                printf_("CAN : wait for correct CAN ID timeout\n");
+                return -1;
+            }
+        } else {
+            if (!verifyGetUpdateStatus(response_data.frame.data, false)) {
+                return -1;
+            }
+            uint8_t *p = response_data.frame.data;
+            memcpy(resp, &p[RSP_DAT_OFFSET], 3);
+            return 3;
+        }
     }
-    ZCAN_Receive_Data response_data;
-    if (ZCAN_Receive(chn, &response_data, 1, -1) != 1) {
-        printf_("CAN : receive packet timeout\n");
-        return -1;
-    }
-    if (GET_ID(response_data.frame.can_id) != CAN_RSP_ID) {
-        printf_("CAN : wrong CAN ID %d received\n", response_data.frame.can_id);
-        return -1;
-    }
-    if (!verifyGetUpdateStatus(response_data.frame.data, false)) {
-        return -1;
-    }
-    uint8_t *p = response_data.frame.data;
-    memcpy(resp, &p[RSP_DAT_OFFSET], 3);
-    return 3;
+    return -1;
 }

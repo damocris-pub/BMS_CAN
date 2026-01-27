@@ -239,11 +239,11 @@ static bool verifyCrcEop(uint8_t *dat, int len)
     uint16_t crc = dat[RSP_CRC_OFFSET(len)] | (dat[RSP_CRC_OFFSET(len) + 1] << 8);
     uint16_t expected_crc = crc16(&dat[RSP_ADR_OFFSET], len, 0xffff);
     if (expected_crc != crc) {
-        printf_("response error: crc received 0x%04X, expected 0x%04X", crc, expected_crc);
+        printf_("response error: crc received 0x%04X, expected 0x%04X\n", crc, expected_crc);
         return false;
     }
     if (dat[RSP_EOP_OFFSET(len)] != DFU_CMD_SOP) {
-        printf_("response error: SOP received %d, expected 0x5B", dat[RSP_EOP_OFFSET(len)]);
+        printf_("response error: SOP received %d, expected 0x5B\n", dat[RSP_EOP_OFFSET(len)]);
         return false;
     }
     return true;
@@ -258,20 +258,20 @@ bool verifyPrepare(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_CMD_SOP)) {
-        printf_("prepare response error: SOP received %d, expected 0x5B", dat[CMD_SOP_OFFSET]);
+        printf_("prepare response error: SOP received %d, expected 0x5B\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x05) {
-        printf_("prepare response error: length received %d, expected 0x05", len);
+        printf_("prepare response error: length received %d, expected 0x05\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != DFU_PREPARE + 0x40) {
-        printf_("prepare response error: command received %d, expected 0x50", dat[RSP_STA_OFFSET - offset]);
+        printf_("prepare response error: command received %d, expected 0x50\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (dat[RSP_DAT_OFFSET - offset] != 0xCC || dat[RSP_DAT_OFFSET + 1 - offset] != 0xFE) {
-        printf_("prepare response error: data received 0x%02X 0x%02X, expected 0xCC 0xFE", dat[RSP_DAT_OFFSET-offset],  dat[RSP_DAT_OFFSET + 1 - offset]);
+        printf_("prepare response error: data received 0x%02X 0x%02X, expected 0xCC 0xFE\n", dat[RSP_DAT_OFFSET-offset],  dat[RSP_DAT_OFFSET + 1 - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
@@ -289,16 +289,16 @@ bool verifyGetBootloaderVer(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_CMD_SOP)) {
-        printf_("getBootloaderVer response error: SOP received %d, expected 0x5B", dat[CMD_SOP_OFFSET]);
+        printf_("getBootloaderVer response error: SOP received %d, expected 0x5B\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x07) {
-        printf_("getBootloaderVer response error: length received %d, expected 0x07", len);
+        printf_("getBootloaderVer response error: length received %d, expected 0x07\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != DFU_GET_BOOTVER + 0x40) {
-        printf_("getBootloaderVer response error: command received %d, expected 0x50", dat[RSP_STA_OFFSET - offset]);
+        printf_("getBootloaderVer response error: command received %d, expected 0x50\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
@@ -316,16 +316,16 @@ bool verifyGetHardwareInfo(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_CMD_SOP)) {
-        printf_("getHardwareInfo response error: SOP received %d, expected 0x5B", dat[CMD_SOP_OFFSET]);
+        printf_("getHardwareInfo response error: SOP received %d, expected 0x5B\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x07) {
-        printf_("getHardwareInfo response error: length received %d, expected 0x07", len);
+        printf_("getHardwareInfo response error: length received %d, expected 0x07\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != DFU_GET_HWINFO + 0x40) {
-        printf_("getHardwareInfo response error: command received %d, expected 0x61", dat[RSP_STA_OFFSET - offset]);
+        printf_("getHardwareInfo response error: command received %d, expected 0x61\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
@@ -343,16 +343,16 @@ bool verifyGetHardwareType(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_CMD_SOP)) {
-        printf_("getHardwareType response error: SOP received %d, expected 0x5B", dat[CMD_SOP_OFFSET]);
+        printf_("getHardwareType response error: SOP received %d, expected 0x5B\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x07) {
-        printf_("getHardwareType response error: length received %d, expected 0x07", len);
+        printf_("getHardwareType response error: length received %d, expected 0x07\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != DFU_GET_HWTYPE + 0x40) {
-        printf_("getHardwareType response error: command received %d, expected 0x62", dat[RSP_STA_OFFSET - offset]);
+        printf_("getHardwareType response error: command received %d, expected 0x62\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
@@ -370,16 +370,16 @@ bool verifyGetApplicationVer(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_CMD_SOP)) {
-        printf_("getApplicationVer response error: SOP received %d, expected 0x5B", dat[CMD_SOP_OFFSET]);
+        printf_("getApplicationVer response error: SOP received %d, expected 0x5B\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x07) {
-        printf_("getApplicationVer response error: length received %d, expected 0x07", len);
+        printf_("getApplicationVer response error: length received %d, expected 0x07\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != DFU_GET_APPVER + 0x40) {
-        printf_("getApplicationVer response error: command received %d, expected 0x63", dat[RSP_STA_OFFSET - offset]);
+        printf_("getApplicationVer response error: command received %d, expected 0x63\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
@@ -397,16 +397,16 @@ bool verifyGetPacketLen(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_CMD_SOP)) {
-        printf_("getPacketLen response error: SOP received %d, expected 0x5B", dat[CMD_SOP_OFFSET]);
+        printf_("getPacketLen response error: SOP received %d, expected 0x5B\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x06) {
-        printf_("getPacketLen response error: length received %d, expected 0x06", len);
+        printf_("getPacketLen response error: length received %d, expected 0x06\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != DFU_GET_PKTLEN + 0x40) {
-        printf_("getPacketLen response error: command received %d, expected 0x68", dat[RSP_STA_OFFSET - offset]);
+        printf_("getPacketLen response error: command received %d, expected 0x68\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
@@ -424,20 +424,20 @@ bool verifySetPacketLen(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_CMD_SOP)) {
-        printf_("setPacketLen response error: SOP received %d, expected 0x5B", dat[CMD_SOP_OFFSET]);
+        printf_("setPacketLen response error: SOP received %d, expected 0x5B\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x03) {
-        printf_("setPacketLen response error: length received %d, expected 0x03", len);
+        printf_("setPacketLen response error: length received %d, expected 0x03\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != DFU_SET_PKTLEN + 0x40) {
-        printf_("setPacketLen response error: command received %d, expected 0x69", dat[RSP_STA_OFFSET - offset]);
+        printf_("setPacketLen response error: command received %d, expected 0x69\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (dat[RSP_DAT_OFFSET - offset] != SET_PKTLEN_OK) {
-        printf_("setPacketSeq response error: ack received %d, expected 0xA1", dat[RSP_DAT_OFFSET - offset]);
+        printf_("setPacketSeq response error: ack received %d, expected 0xA1\n", dat[RSP_DAT_OFFSET - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
@@ -455,20 +455,20 @@ bool verifySetApplicationLen(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_CMD_SOP)) {
-        printf_("setApplicationLen response error: SOP received %d, expected 0x5B", dat[CMD_SOP_OFFSET]);
+        printf_("setApplicationLen response error: SOP received %d, expected 0x5B\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x07) {
-        printf_("setApplicationLen response error: length received %d, expected 0x07", len);
+        printf_("setApplicationLen response error: length received %d, expected 0x07\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != DFU_SET_APPLEN + 0x40) {
-        printf_("setApplicationLen response error: command received %d, expected 0x70", dat[RSP_STA_OFFSET - offset]);
+        printf_("setApplicationLen response error: command received %d, expected 0x70\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (dat[RSP_DAT_OFFSET - offset] != APP_LENGTH_OK) {
-        printf_("setApplicationLen response error: ack received %d, expected 0xA1", dat[RSP_DAT_OFFSET - offset]);
+        printf_("setApplicationLen response error: ack received %d, expected 0xA1\n", dat[RSP_DAT_OFFSET - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
@@ -486,20 +486,20 @@ bool verifySetPacketSeq(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_CMD_SOP)) {
-        printf_("setPacketSeq response error: SOP received %d, expected 0x5B", dat[CMD_SOP_OFFSET]);
+        printf_("setPacketSeq response error: SOP received %d, expected 0x5B\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x05) {
-        printf_("setPacketSeq response error: length received %d, expected 0x05", len);
+        printf_("setPacketSeq response error: length received %d, expected 0x05\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != DFU_SET_PKTNUM + 0x40) {
-        printf_("setPacketSeq response error: command received %d, expected 0x80", dat[RSP_STA_OFFSET - offset]);
+        printf_("setPacketSeq response error: command received %d, expected 0x80\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (dat[RSP_DAT_OFFSET - offset] != SET_PKTNUM_OK) {
-        printf_("setPacketSeq response error: ack received %d, expected 0xA2", dat[RSP_DAT_OFFSET - offset]);
+        printf_("setPacketSeq response error: ack received %d, expected 0xA2\n", dat[RSP_DAT_OFFSET - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
@@ -517,20 +517,20 @@ bool verifySetPacketAddr(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_CMD_SOP)) {
-        printf_("setPacketAddr response error: SOP received %d, expected 0x5B", dat[CMD_SOP_OFFSET]);
+        printf_("setPacketAddr response error: SOP received %d, expected 0x5B\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x07) {
-        printf_("setPacketAddr response error: length received %d, expected 0x07", len);
+        printf_("setPacketAddr response error: length received %d, expected 0x07\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != DFU_SET_PKTNUM + 0x40) {
-        printf_("setPacketAddr response error: command received %d, expected 0x80", dat[RSP_STA_OFFSET - offset]);
+        printf_("setPacketAddr response error: command received %d, expected 0x80\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (dat[RSP_DAT_OFFSET - offset] != SET_PKTNUM_OK) {
-        printf_("setPacketAddr response error: ack received %d, expected 0xA2", dat[RSP_DAT_OFFSET - offset]);
+        printf_("setPacketAddr response error: ack received %d, expected 0xA2\n", dat[RSP_DAT_OFFSET - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
@@ -548,20 +548,20 @@ bool verifySendPacketData(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_DAT_SOP)) {
-        printf_("setPacketAddr response error: SOP received %d, expected 0x5C", dat[CMD_SOP_OFFSET]);
+        printf_("setPacketAddr response error: SOP received %d, expected 0x5C\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x03) {
-        printf_("setPacketAddr response error: length received %d, expected 0x03", len);
+        printf_("setPacketAddr response error: length received %d, expected 0x03\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != 0x8C) {
-        printf_("setPacketAddr response error: command received %d, expected 0x8C", dat[RSP_STA_OFFSET - offset]);
+        printf_("setPacketAddr response error: command received %d, expected 0x8C\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (dat[RSP_DAT_OFFSET - offset] != XFER_DATA_OK) {
-        printf_("setPacketAddr response error: ack received %d, expected 0xA2", dat[RSP_DAT_OFFSET - offset]);
+        printf_("setPacketAddr response error: ack received %d, expected 0xA2\n", dat[RSP_DAT_OFFSET - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
@@ -579,20 +579,20 @@ bool verifyPacketData(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_CMD_SOP)) {
-        printf_("verifyPacketData response error: SOP received %d, expected 0x5B", dat[CMD_SOP_OFFSET]);
+        printf_("verifyPacketData response error: SOP received %d, expected 0x5B\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x03) {
-        printf_("verifyPacketData response error: length received %d, expected 0x03", len);
+        printf_("verifyPacketData response error: length received %d, expected 0x03\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != DFU_VERIFY_PKTDAT + 0x40) {
-        printf_("verifyPacketData response error: command received %d, expected 0x85", dat[RSP_STA_OFFSET - offset]);
+        printf_("verifyPacketData response error: command received %d, expected 0x85\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (dat[RSP_DAT_OFFSET - offset] != VERIFY_DATA_OK) {
-        printf_("verifyPacketData response error: ack received %d, expected 0xA3", dat[RSP_DAT_OFFSET - offset]);
+        printf_("verifyPacketData response error: ack received %d, expected 0xA3\n", dat[RSP_DAT_OFFSET - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
@@ -610,20 +610,20 @@ bool verifyAllData(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_CMD_SOP)) {
-        printf_("verifyAllData response error: SOP received %d, expected 0x5B", dat[CMD_SOP_OFFSET]);
+        printf_("verifyAllData response error: SOP received %d, expected 0x5B\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x03) {
-        printf_("verifyAllData response error: length received %d, expected 0x03", len);
+        printf_("verifyAllData response error: length received %d, expected 0x03\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != DFU_VERIFY_ALLDAT + 0x40) {
-        printf_("verifyAllData response error: command received %d, expected 0x85", dat[RSP_STA_OFFSET - offset]);
+        printf_("verifyAllData response error: command received %d, expected 0x85\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (dat[RSP_DAT_OFFSET - offset] != VERIFY_ALL_OK) {
-        printf_("verifyAllData response error: ack received %d, expected 0xA4", dat[RSP_DAT_OFFSET - offset]);
+        printf_("verifyAllData response error: ack received %d, expected 0xA4\n", dat[RSP_DAT_OFFSET - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
@@ -641,16 +641,16 @@ bool verifyGetUpdateStatus(uint8_t *dat, bool useSop)
         offset = 1;
     }
     if (useSop && (dat[RSP_SOP_OFFSET] != DFU_CMD_SOP)) {
-        printf_("getUpdateStatus response error: SOP received %d, expected 0x5B", dat[CMD_SOP_OFFSET]);
+        printf_("getUpdateStatus response error: SOP received %d, expected 0x5B\n", dat[CMD_SOP_OFFSET]);
         return false;
     }
     int len = dat[RSP_LEN_OFFSET - offset];
     if (len != 0x05) {
-        printf_("getUpdateStatus response error: length received %d, expected 0x05", len);
+        printf_("getUpdateStatus response error: length received %d, expected 0x05\n", len);
         return false;
     }
     if (dat[RSP_STA_OFFSET - offset] != DFU_GET_STATUS + 0x40) {
-        printf_("getUpdateStatus response error: command received %d, expected 0x85", dat[RSP_STA_OFFSET - offset]);
+        printf_("getUpdateStatus response error: command received %d, expected 0x85\n", dat[RSP_STA_OFFSET - offset]);
         return false;
     }
     if (useSop && !verifyCrcEop(dat, len)) {
